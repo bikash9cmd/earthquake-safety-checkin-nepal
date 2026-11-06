@@ -1,4 +1,4 @@
-# Surakshit (सुरक्षित): "I'm safe" check-ins for the next big earthquake in Nepal
+# Earthquake Safety Check-in: "I'm safe" check-ins for the next big earthquake in Nepal
 
 [![Try it live](https://img.shields.io/badge/Try_it-live-2ea44f?style=for-the-badge)](https://surakshit-nepal-quake-checkin.onrender.com)
 
