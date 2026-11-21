@@ -93,3 +93,29 @@ def test_note_is_normalised_and_cut_by_characters_not_bytes():
     assert len(clean_note("घ" * 500)) == 140
     assert clean_note("a\x00b\n\nc") == "ab c"
     assert parse_sms("HELP\ngorkha").district == "Gorkha"
+
+
+# ---------- SMS webhook body ----------
+
+from surakshit.sms_gateway import parse_inbound  # noqa: E402
+
+
+@pytest.mark.parametrize("body, expected", [
+    ('{"from": "+9779851000002", "text": "SAFE", "id": "a1"}', {"from": "+9779851000002", "text": "SAFE", "id": "a1"}),
+    # Gateways often send the MSISDN and message id as JSON numbers.
+    ('{"msisdn": 9851000002, "message": "HELP gorkha", "message_id": 77}',
+     {"from": "9851000002", "text": "HELP gorkha", "id": "77"}),
+    ('{"msisdn": 9779851000002.0, "text": "ok"}', {"from": "9779851000002", "text": "ok", "id": ""}),
+    # An empty preferred field falls through to the alternative name.
+    ('{"from": "", "sender": " 9851000002 ", "text": "ok"}', {"from": "9851000002", "text": "ok", "id": ""}),
+    # Lists, objects, booleans and nulls are not phone numbers or messages.
+    ('{"from": ["9851000002"], "sender": true, "text": {"a": 1}, "id": null}', {"from": "", "text": "", "id": ""}),
+])
+def test_parse_inbound_returns_strings(body, expected):
+    assert parse_inbound(body) == expected
+
+
+@pytest.mark.parametrize("body", ["[]", '"SAFE"', "null", "9851000002", "{broken"])
+def test_parse_inbound_rejects_bodies_that_are_not_json_objects(body):
+    with pytest.raises(ValueError):
+        parse_inbound(body)

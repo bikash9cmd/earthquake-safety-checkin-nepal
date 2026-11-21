@@ -159,3 +159,21 @@ def test_writer_returns_throttled_messages_for_retry(aws, monkeypatch):
     resp = handlers.writer_handler({"Records": [sqs_record(json.dumps({"phone": "9841234567", "status": "safe"}),
                                                            "t1")]})
     assert resp == {"batchItemFailures": [{"itemIdentifier": "t1"}]}
+
+
+def test_sms_webhook_numeric_sender_is_kept_and_a_non_object_body_does_not_fail_the_batch(aws):
+    handlers.activator_handler({"feed": gorkha_feed()})
+    records = [
+        sqs_record(json.dumps({"msisdn": 9851000002, "text": "SAFE kavre", "message_id": 42}), "s1", "sms"),
+        sqs_record("[]", "s2", "sms"),
+        sqs_record("null", "s3", "sms"),
+        sqs_record(json.dumps({"phone": "9841234567", "status": "safe"}), "w1"),
+    ]
+    assert handlers.writer_handler({"Records": records}) == {"batchItemFailures": []}
+
+    items = boto3.resource("dynamodb").Table("CheckIns").scan()["Items"]
+    assert sorted(i["channel"] for i in items) == ["sms", "web"]
+    sms = next(i for i in items if i["channel"] == "sms")
+    assert sms["status"] == "safe" and sms["district"] == "Kavrepalanchok"
+    notify = boto3.client("sqs").receive_message(QueueUrl=aws["notify_url"], MaxNumberOfMessages=10)["Messages"]
+    assert [json.loads(m["Body"])["kind"] for m in notify] == ["reply"]
