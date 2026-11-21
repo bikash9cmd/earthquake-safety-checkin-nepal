@@ -75,9 +75,34 @@ def allowed(kind: str, sent_so_far: int, budget: int) -> bool:
 
 
 def parse_inbound(body: str) -> dict:
-    """Webhook body from the aggregator -> {from, text, id}. Accepts JSON with either our field
-    names or the common alternatives."""
+    """Webhook body from the aggregator -> {from, text, id}, all strings. Accepts JSON with either
+    our field names or the common alternatives.
+
+    Gateways often send the MSISDN and message id as JSON numbers; those are turned into strings
+    here, because the writer would otherwise reject a numeric sender and lose the check-in. A body
+    that is valid JSON but not an object raises ValueError, which the writer Lambda counts as
+    unreadable for that one message instead of failing (and retrying) the whole batch.
+    """
     d = json.loads(body)
-    return {"from": d.get("from") or d.get("sender") or d.get("msisdn") or "",
-            "text": d.get("text") or d.get("message") or d.get("keyword") or "",
-            "id": str(d.get("id") or d.get("message_id") or "")}
+    if not isinstance(d, dict):
+        raise ValueError(f"SMS webhook body is a JSON {type(d).__name__}, not an object")
+    return {"from": _field(d, "from", "sender", "msisdn"),
+            "text": _field(d, "text", "message", "keyword"),
+            "id": _field(d, "id", "message_id")}
+
+
+def _field(d: dict, *names: str) -> str:
+    """The first of `names` holding a non-empty string or number, as a stripped string. Lists,
+    objects and booleans count as missing: str() of them is never a phone number or an SMS."""
+    for name in names:
+        v = d.get(name)
+        if isinstance(v, bool) or not isinstance(v, (str, int, float)):
+            continue
+        if isinstance(v, float):
+            if not v.is_integer():
+                continue
+            v = int(v)
+        v = str(v).strip()
+        if v:
+            return v
+    return ""
